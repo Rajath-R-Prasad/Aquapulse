@@ -1,5 +1,5 @@
 export const strings = {
-  appName: 'JalRakshak',
+  appName: 'AquaPulse',
   sessionExpired: 'Your session expired',
   accessDenied: 'This dashboard is for utility staff. Please use the field app',
   empty: {

@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { useMe } from '@/features/auth/useMe';
 import { useAwaitingApprovalCount } from '@/shared/data/counts';
+import { strings } from '@/shared/lib/strings';
 import { cn } from '@/shared/lib/cn';
 
 function Item({ to, icon: Icon, label, collapsed, badge, end }) {
@@ -45,7 +46,7 @@ export function Sidebar({ collapsed, onToggle }) {
     <aside className={cn('sticky top-0 flex h-screen shrink-0 flex-col border-r border-line bg-surface transition-[width] duration-200', collapsed ? 'w-16' : 'w-[232px]')}>
       <div className={cn('flex h-14 items-center gap-2 border-b border-line px-4 text-primary', collapsed && 'justify-center px-0')}>
         <Droplets className="size-6" aria-hidden="true" />
-        {!collapsed && <span className="text-lg font-semibold">JalRakshak</span>}
+        {!collapsed && <span className="text-lg font-semibold">{strings.appName}</span>}
       </div>
       <nav className="flex-1 space-y-5 overflow-y-auto p-3" aria-label="Main">
         <Group title="Operations" collapsed={collapsed}>
