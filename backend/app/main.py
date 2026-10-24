@@ -17,9 +17,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import settings
 from app.ml.registry import registry
 from app.routers import (advisories, auth, dashboard, demo, engineers, events, ingest_hardware, ingest_twin, me,
-                         network, workorders)
+                         network, public, workorders)
 from app.schemas.common import PROBLEM_BASE, ProblemException
-from app.workers import baselines, evaluator, offline, renotify, retention, timeouts
+from app.workers import baselines, evaluator, offline, public_impact, renotify, retention, timeouts
 
 log = logging.getLogger("AquaPulse")
 PROBLEM_JSON = "application/problem+json"
@@ -71,7 +71,8 @@ async def lifespan(app: FastAPI):
     if settings.enable_workers:
         tasks = [asyncio.create_task(w.run(), name=n) for n, w in (
             ("evaluator", evaluator), ("offline-sweeper", offline), ("advisory-renotifier", renotify),
-            ("assignment-timeout", timeouts), ("baselines", baselines), ("retention", retention))]
+            ("assignment-timeout", timeouts), ("baselines", baselines), ("retention", retention),
+            ("public-impact", public_impact))]
         tasks.append(asyncio.create_task(registry.watch(), name="model-reloader"))
     yield
     for t in tasks:
@@ -109,7 +110,7 @@ def create_app() -> FastAPI:
         return _problem(500, "internal-error", "Internal server error", request)
 
     for r in (auth, demo, ingest_hardware, ingest_twin, events, engineers, workorders, advisories, network, dashboard,
-              me):
+              me, public):
         app.include_router(r.router)
 
     @app.get("/health", tags=["Health"])

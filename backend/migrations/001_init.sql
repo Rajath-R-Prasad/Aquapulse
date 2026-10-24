@@ -348,6 +348,17 @@ create table pipe_state_history (
 
 create table app_settings (key text primary key, value jsonb not null, updated_at timestamptz not null default now());
 
+create table public_impact (
+  id boolean primary key default true check (id),
+  status text not null default 'NORMAL' check (status in ('NORMAL','LEAK')),
+  active_leaks integer not null default 0 check (active_leaks >= 0),
+  water_lost_l bigint not null default 0 check (water_lost_l >= 0),
+  households_affected integer not null default 0 check (households_affected >= 0),
+  household_days numeric(12,2) not null default 0 check (household_days >= 0),
+  updated_at timestamptz not null default now()
+);
+insert into public_impact (id) values (true);
+
 create trigger trg_leak_events_updated before update on leak_events for each row execute function set_updated_at();
 create trigger trg_work_orders_updated before update on work_orders for each row execute function set_updated_at();
 
@@ -357,7 +368,8 @@ insert into app_settings (key, value) values
  ('sla_arrive_minutes', '{"P1":60,"P2":240,"P3":1440,"P4":4320}'),
  ('dispatch', '{"accept_timeout_s":600,"location_max_age_s":900,"max_distance_m":20000}'),
  ('evidence', '{"max_distance_m":50,"max_size_mb":10,"arrival_geofence_m":100}'),
- ('retention_days', '{"hw_readings":90,"twin_pipe_readings":14,"ml_inferences":90}');
+ ('retention_days', '{"hw_readings":90,"twin_pipe_readings":14,"ml_inferences":90}'),
+ ('public_impact', '{"lpcd":135,"persons_per_household":4}');
 -- All values in app_settings are starting points to be calibrated on the rig and the twin.
 
 -- ======================= 7.3 Database functions =======================

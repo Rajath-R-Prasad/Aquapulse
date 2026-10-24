@@ -55,8 +55,8 @@ def compute_isolation(leak_pipe: Any, pipes: dict, nodes: dict, valves: list[dic
     return to_close, region
 
 
-def affected_connections(region: set, pipes: dict, nodes: dict) -> int:
-    """Remove region pipes from the graph; sum served_connections of nodes that can no longer reach a source."""
+def affected_node_ids(region: set, pipes: dict, nodes: dict) -> set:
+    """Remove region pipes from the graph; return the junction nodes that can no longer reach a source."""
     g = nx.Graph()
     g.add_nodes_from(nodes)
     for pid, p in pipes.items():
@@ -66,7 +66,12 @@ def affected_connections(region: set, pipes: dict, nodes: dict) -> int:
     fed: set = set()
     for src in sources:
         fed |= nx.node_connected_component(g, src)
-    return int(sum(d["served_connections"] or 0 for n, d in nodes.items() if n not in fed and d["kind"] == "JUNCTION"))
+    return {n for n, d in nodes.items() if n not in fed and d["kind"] == "JUNCTION"}
+
+
+def affected_connections(region: set, pipes: dict, nodes: dict) -> int:
+    """Sum served_connections for the nodes returned by affected_node_ids."""
+    return int(sum(nodes[n]["served_connections"] or 0 for n in affected_node_ids(region, pipes, nodes)))
 
 
 def build_message(pipe_code: str, valve_codes: list[str], connections: int, severity: str, rate: float | None) -> str:

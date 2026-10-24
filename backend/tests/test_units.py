@@ -12,6 +12,7 @@ from app.schemas.common import ProblemException, decode_cursor, encode_cursor
 from app.services import features as F
 from app.services.dispatch import breakdown as dispatch_breakdown
 from app.services import severity as sev
+from app.services.impact import compute_impact
 from app.services.isolation import affected_connections, build_message, compute_isolation
 from app.services.normalize import normalize_reading
 
@@ -110,6 +111,13 @@ def test_public_demo_dashboard_is_read_only_and_anonymous():
     from app.main import app
 
     operation = app.openapi()["paths"]["/v1/demo/dashboard"]["get"]
+    assert "security" not in operation
+
+
+def test_public_status_is_anonymous():
+    from app.main import app
+
+    operation = app.openapi()["paths"]["/v1/public/status"]["get"]
     assert "security" not in operation
 
 
@@ -218,6 +226,53 @@ def test_isolation_messages():
     assert build_message("P17", [], 0, "MAJOR", 18.4) == "No isolation valve mapped, contact the field team."
     assert build_message("P17", ["V1", "V2"], 124, "MAJOR", 18.4) == \
         "Close V1, V2 to isolate P17 (about 124 connections lose supply). Severity MAJOR, about 18 L/min."
+
+
+# ---------- public impact
+IMPACT_NOW = datetime(2026, 10, 24, 12, 0, tzinfo=timezone.utc)
+
+
+def _impact(events, advisories=("p2",)):
+    nodes, pipes = _grid()
+    return compute_impact(events, advisories, pipes, nodes, _valves(pipes),
+                          lpcd=135, persons_per_household=4, now=IMPACT_NOW)
+
+
+def _event(rate, minutes_ago, isolated_minutes_ago=None):
+    return {"est_leak_rate_lpm": rate, "detected_at": IMPACT_NOW - timedelta(minutes=minutes_ago),
+            "isolated_at": (IMPACT_NOW - timedelta(minutes=isolated_minutes_ago)
+                            if isolated_minutes_ago is not None else None)}
+
+
+def test_public_impact_no_leaks_is_all_zeros():
+    assert _impact([]) == {"status": "NORMAL", "active_leaks": 0, "water_lost_l": 0,
+                           "households_affected": 0, "household_days": 0.0}
+
+
+def test_public_impact_one_leak():
+    result = _impact([_event(10, 30)])
+    assert result["status"] == "LEAK" and result["active_leaks"] == 1
+    assert result["water_lost_l"] == 300
+    assert result["households_affected"] == 50                 # B + C lose supply
+    assert result["household_days"] == pytest.approx(0.56, abs=0.01)
+
+
+def test_public_impact_two_leaks_share_customers_deduplicated():
+    result = _impact([_event(6, 30), _event(4, 30)], advisories=("p2", "p3"))
+    assert result["active_leaks"] == 2
+    assert result["water_lost_l"] == 300
+    assert result["households_affected"] == 50                 # C counted once, not 50 + 30
+
+
+def test_public_impact_leak_after_isolation_stops_at_isolation_time():
+    result = _impact([_event(10, 120, isolated_minutes_ago=60)])
+    assert result["water_lost_l"] == 600                       # 60 min, not 120
+
+
+def test_public_impact_unisolated_leak_uses_now():
+    result = _impact([_event(10, 90)])
+    assert result["water_lost_l"] == 900
+    assert result["household_days"] == pytest.approx(1.67, abs=0.01)
 
 
 # ---------- features (9.2)

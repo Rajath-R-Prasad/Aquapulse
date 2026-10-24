@@ -25,8 +25,8 @@ def _async_url(url: str) -> str:
 # Supabase pooler (transaction mode) needs prepared-statement caching disabled.
 engine = create_async_engine(
     _async_url(settings.database_url),
-    pool_size=20,
-    max_overflow=10,
+    pool_size=5,
+    max_overflow=5,
     pool_timeout=45.0,
     pool_pre_ping=True,
     connect_args={
@@ -145,6 +145,7 @@ _DEFAULTS: dict[str, dict] = {
     "dispatch": {"accept_timeout_s": 600, "location_max_age_s": 900, "max_distance_m": 20000},
     "evidence": {"max_distance_m": 50, "max_size_mb": 10, "arrival_geofence_m": 100},
     "retention_days": {"hw_readings": 90, "twin_pipe_readings": 14, "ml_inferences": 90},
+    "public_impact": {"lpcd": 135, "persons_per_household": 4},
 }
 _cache: dict[str, tuple[float, dict]] = {}
 
