@@ -28,10 +28,15 @@ function geometryPoints(geometry) {
   return [];
 }
 
-function NetworkDiagram({ features, leaks, selectedCode, onSelect }) {
+function NetworkDiagram({ features, leaks, selectedCode, onSelect, readings = new Map() }) {
+  const [hoveredCode, setHoveredCode] = useState(null);
+
   const layout = useMemo(() => {
     const pipeFeatures = features.filter((feature) => feature.properties?.feature_type === 'PIPE');
-    const nodeFeatures = features.filter((feature) => feature.properties?.feature_type === 'NODE');
+    const pointFeatures = features.filter((feature) => (
+      feature.geometry?.type === 'Point'
+      || ['NODE', 'SENSOR', 'VALVE'].includes(String(feature.properties?.feature_type ?? '').toUpperCase())
+    ));
     const coordinates = features.flatMap((feature) => geometryPoints(feature.geometry));
     if (!coordinates.length) return { pipes: [], nodes: [], width: 1000, height: 620 };
 
@@ -48,30 +53,60 @@ function NetworkDiagram({ features, leaks, selectedCode, onSelect }) {
       padding + ((Number(lon) - minX) / Math.max(maxX - minX, 0.00001)) * (width - padding * 2),
       height - padding - ((Number(lat) - minY) / Math.max(maxY - minY, 0.00001)) * (height - padding * 2),
     ];
+
     const pipes = pipeFeatures.map((feature) => {
       const segments = feature.geometry?.type === 'MultiLineString'
         ? feature.geometry.coordinates
         : [feature.geometry?.coordinates ?? []];
-      const points = segments.flat().map(mapPoint);
+      const mappedSegments = segments.map((segment) => segment.map(mapPoint));
+      const points = mappedSegments.flat();
       const middle = points[Math.floor(points.length / 2)] ?? [width / 2, height / 2];
+      const longestSegment = mappedSegments.reduce(
+        (best, segment) => segment.length > best.length ? segment : best,
+        [],
+      );
+      const arrowIndex = Math.max(0, Math.floor((longestSegment.length - 1) / 2));
+      const arrowStart = longestSegment[arrowIndex] ?? middle;
+      const arrowEnd = longestSegment[Math.min(arrowIndex + 1, longestSegment.length - 1)] ?? middle;
+      const angle = Math.atan2(arrowEnd[1] - arrowStart[1], arrowEnd[0] - arrowStart[0]) * 180 / Math.PI;
       return {
         feature,
         points,
         middle,
-        path: segments.map((segment) => segment.map(mapPoint)
+        arrowPoint: [(arrowStart[0] + arrowEnd[0]) / 2, (arrowStart[1] + arrowEnd[1]) / 2],
+        arrowAngle: angle,
+        endpoints: mappedSegments.flatMap((segment) => segment.length ? [segment[0], segment[segment.length - 1]] : []),
+        path: mappedSegments.map((segment) => segment
           .map(([x, y], index) => `${index ? 'L' : 'M'}${x},${y}`).join(' ')).join(' '),
       };
     });
-    const nodes = nodeFeatures.map((feature) => ({
+
+    const nodes = pointFeatures.map((feature) => ({
       feature,
       point: mapPoint(feature.geometry?.coordinates ?? [0, 0]),
+      kind: String(
+        feature.properties?.asset_type
+        ?? feature.properties?.node_type
+        ?? feature.properties?.feature_type
+        ?? feature.properties?.type
+        ?? 'NODE',
+      ).toUpperCase(),
     }));
     return { pipes, nodes, width, height };
   }, [features]);
 
-  const pipeColors = { NORMAL: '#2dd4bf', WARNING: '#fbbf24', LEAK: '#fb7185', ISOLATED: '#a78bfa' };
+  const pipeColors = { NORMAL: '#14b8a6', WARNING: '#f59e0b', LEAK: '#ef4444', ISOLATED: '#9ca3af' };
   if (!layout.pipes.length) {
     return <div className="grid h-full place-items-center text-sm text-slate-600">Network geometry is unavailable.</div>;
+  }
+
+  const selectedPipe = layout.pipes.find(({ feature }) => feature.properties?.code === selectedCode);
+  const connectedNodeCodes = new Set();
+  if (selectedPipe) {
+    layout.nodes.forEach(({ feature, point }) => {
+      const closeToEndpoint = selectedPipe.endpoints.some(([x, y]) => Math.hypot(point[0] - x, point[1] - y) < 14);
+      if (closeToEndpoint) connectedNodeCodes.add(feature.properties?.code);
+    });
   }
 
   return (
@@ -87,18 +122,25 @@ function NetworkDiagram({ features, leaks, selectedCode, onSelect }) {
         </pattern>
       </defs>
       <rect width={layout.width} height={layout.height} fill="url(#water-dots)" />
-      {layout.pipes.map(({ feature, points, middle, path }) => {
+
+      {layout.pipes.map(({ feature, points, middle, path, arrowPoint, arrowAngle }) => {
         const pipe = feature.properties;
-        const active = pipe.code in leaks;
+        const active = leaks[pipe.code] != null || pipe.state === 'LEAK';
         const isSelected = pipe.code === selectedCode;
+        const reading = readings.get(pipe.code);
         const color = active ? pipeColors.LEAK : pipeColors[pipe.state] || pipeColors.NORMAL;
+        const flow = reading?.flow_in ?? reading?.flow_out ?? pipe.flow_lpm;
+        const pressure = reading?.pressure_in ?? pipe.pressure_kpa;
+
         return (
           <g
             key={pipe.code}
             role={pipe.monitoring === 'SIMULATED' ? 'button' : undefined}
             tabIndex={pipe.monitoring === 'SIMULATED' ? 0 : undefined}
-            aria-label={`${pipe.code}, ${pipe.state}, ${pipe.monitoring}`}
+            aria-label={`${pipe.code}, ${active ? 'LEAK' : pipe.state}, ${pipe.monitoring}`}
             onClick={() => pipe.monitoring === 'SIMULATED' && onSelect(pipe.code)}
+            onMouseEnter={() => setHoveredCode(pipe.code)}
+            onMouseLeave={() => setHoveredCode(null)}
             onKeyDown={(event) => {
               if (pipe.monitoring === 'SIMULATED' && (event.key === 'Enter' || event.key === ' ')) {
                 event.preventDefault();
@@ -107,7 +149,11 @@ function NetworkDiagram({ features, leaks, selectedCode, onSelect }) {
             }}
             className={pipe.monitoring === 'SIMULATED' ? 'cursor-pointer' : ''}
           >
+            <title>{`${pipe.code} · ${active ? 'LEAK' : pipe.state} · Flow: ${fmt(flow)} L/min · Pressure: ${fmt(pressure)} kPa`}</title>
             <path d={path} fill="none" stroke="transparent" strokeWidth="26" />
+            {isSelected && (
+              <path d={path} fill="none" stroke="#0f766e" strokeWidth="13" strokeLinecap="round" opacity="0.16" />
+            )}
             <path
               d={path}
               fill="none"
@@ -115,18 +161,38 @@ function NetworkDiagram({ features, leaks, selectedCode, onSelect }) {
               strokeWidth={isSelected ? 7 : active ? 6 : 4}
               strokeLinecap="round"
               strokeLinejoin="round"
-              opacity={pipe.monitoring === 'SIMULATED' ? 0.94 : 0.35}
+              strokeDasharray={pipe.monitoring === 'SIMULATED' ? '9 5' : undefined}
+              opacity={pipe.monitoring === 'SIMULATED' ? 0.98 : 0.55}
             />
-            {active && (
+
+            {/* Flow-direction arrow; direction follows the stored pipe coordinate order. */}
+            {points.length > 1 && (
+              <path
+                d="M -7 -5 L 4 0 L -7 5 Z"
+                fill={active ? '#b91c1c' : '#334155'}
+                transform={`translate(${arrowPoint[0]} ${arrowPoint[1]}) rotate(${arrowAngle})`}
+                pointerEvents="none"
+              />
+            )}
+
+            {(active || (hoveredCode === pipe.code && reading)) && (
               <g transform={`translate(${middle[0]} ${middle[1]})`} pointerEvents="none">
-                <circle r="16" fill="#fb7185" opacity="0.35" className="leak-pulse" />
-                <circle r="7" fill="#fb7185" stroke="#ffe4e6" strokeWidth="2" />
-                <text y="-17" textAnchor="middle" fill="#9f1239" className="fill-rose-100 text-[12px] font-bold">
+                {active && <circle r="17" fill="#ef4444" opacity="0.20" className="leak-pulse" />}
+                <circle r={active ? 7 : 5} fill={active ? '#ef4444' : '#ffffff'} stroke={active ? '#b91c1c' : color} strokeWidth="2" />
+                <text y="-17" textAnchor="middle" fill={active ? '#b91c1c' : '#334155'} className="text-[12px] font-bold">
                   {pipe.code}
                 </text>
+                {hoveredCode === pipe.code && (
+                  <g transform="translate(12 12)">
+                    <rect x="0" y="0" width="180" height="48" rx="7" fill="#ffffff" stroke="#cbd5e1" />
+                    <text x="9" y="16" fill="#0f172a" className="text-[11px] font-semibold">{pipe.code} · {active ? 'LEAK DETECTED' : pipe.state}</text>
+                    <text x="9" y="31" fill="#475569" className="text-[10px]">Flow: {fmt(flow)} L/min</text>
+                    <text x="9" y="42" fill="#475569" className="text-[10px]">Pressure: {fmt(pressure)} kPa</text>
+                  </g>
+                )}
               </g>
             )}
-            {!active && (
+            {!active && hoveredCode !== pipe.code && (
               <text
                 x={middle[0]}
                 y={middle[1] - 10}
@@ -143,14 +209,33 @@ function NetworkDiagram({ features, leaks, selectedCode, onSelect }) {
           </g>
         );
       })}
-      {layout.nodes.map(({ feature, point }) => (
-        <g key={feature.properties.code} pointerEvents="none">
-          <circle cx={point[0]} cy={point[1]} r="6" fill="#dbeafe" stroke="#64748b" strokeWidth="3" />
-          <text x={point[0] + 11} y={point[1] + 4} fill="#64748b" className="text-[10px]">
-            {feature.properties.code}
-          </text>
-        </g>
-      ))}
+
+      {layout.nodes.map(({ feature, point, kind }) => {
+        const code = feature.properties?.code ?? feature.properties?.id ?? 'NODE';
+        const isConnected = connectedNodeCodes.has(code);
+        const isValve = kind.includes('VALVE') || feature.properties?.is_valve === true;
+        const isSensor = kind.includes('SENSOR') || feature.properties?.is_sensor === true;
+        return (
+          <g key={code} pointerEvents="none">
+            {isConnected && <circle cx={point[0]} cy={point[1]} r="13" fill="#0f766e" opacity="0.14" />}
+            {isValve ? (
+              <g transform={`translate(${point[0]} ${point[1]})`}>
+                <path d="M -7 -6 L 0 0 L -7 6 Z M 7 -6 L 0 0 L 7 6 Z" fill="#7c3aed" stroke="#5b21b6" strokeWidth="1.5" />
+              </g>
+            ) : isSensor ? (
+              <g transform={`translate(${point[0]} ${point[1]})`}>
+                <rect x="-7" y="-7" width="14" height="14" rx="3" fill="#dbeafe" stroke="#2563eb" strokeWidth="2" />
+                <circle r="2" fill="#2563eb" />
+              </g>
+            ) : (
+              <circle cx={point[0]} cy={point[1]} r={isConnected ? 7 : 6} fill={isConnected ? '#ccfbf1' : '#dbeafe'} stroke={isConnected ? '#0f766e' : '#64748b'} strokeWidth={isConnected ? 3 : 2.5} />
+            )}
+            <text x={point[0] + 11} y={point[1] + 4} fill={isConnected ? '#0f766e' : '#64748b'} className="text-[10px] font-medium">
+              {code}
+            </text>
+          </g>
+        );
+      })}
     </svg>
   );
 }
@@ -313,6 +398,7 @@ export default function App() {
               leaks={leaks}
               selectedCode={selectedCode}
               onSelect={setSelectedCode}
+              readings={readings}
             />
           </div>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-slate-200 px-5 py-3 text-xs text-slate-600">
@@ -477,15 +563,13 @@ export default function App() {
                 const reading = readings.get(pipe.code);
                 const isLeaking = leaks[pipe.code] != null;
                 const condition = isLeaking ? 'LEAK' : pipe.state;
-              const conditionClass =
-  condition === 'LEAK'
-    ? 'bg-red-100 text-red-700 ring-1 ring-inset ring-red-200'
-    : condition === 'ISOLATED'
-      ? 'bg-gray-100 text-gray-700 ring-1 ring-inset ring-gray-300'
-      : condition === 'WARNING' ||
-          condition === 'PENDING_VERIFICATION'
-        ? 'bg-amber-50 text-amber-800'
-        : 'bg-teal-50 text-teal-700';
+                const conditionClass = condition === 'LEAK'
+                  ? 'bg-red-100 text-red-700 ring-1 ring-inset ring-red-200'
+                  : condition === 'ISOLATED'
+                    ? 'bg-gray-100 text-gray-700 ring-1 ring-inset ring-gray-300'
+                    : condition === 'WARNING' || condition === 'PENDING_VERIFICATION'
+                      ? 'bg-amber-50 text-amber-800'
+                      : 'bg-teal-50 text-teal-700';
                 const delta = reading ? Number(reading.flow_in) - Number(reading.flow_out) : null;
                 return (
                   <tr
