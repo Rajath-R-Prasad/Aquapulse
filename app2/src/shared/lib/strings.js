@@ -1,0 +1,25 @@
+export const strings = {
+  appName: 'JalRakshak',
+  sessionExpired: 'Your session expired',
+  accessDenied: 'This dashboard is for utility staff. Please use the field app',
+  empty: {
+    attention: 'All clear. No open events',
+    events: 'No events match these filters',
+    eventsFirst: 'No leaks detected yet',
+    approvals: 'Nothing waiting for approval',
+    workOrders: 'No work orders here',
+    dispatch: 'No engineer is available right now',
+    notifications: 'You are all caught up',
+    engineers: 'No engineers on the roster',
+    network: 'No network loaded. Ask an admin to seed the DMA.',
+  },
+  errors: {
+    conflict: 'This item was updated by someone else. Showing the latest.',
+    rate: 'Too many requests. Try again in a moment.',
+    forbidden: 'You do not have access to do that.',
+  },
+  noValve: 'No isolation valve mapped. Contact the field team.',
+  twinHelp: 'Commands are delivered to the Python twin, which acknowledges them. Detection follows within seconds.',
+  hardwarePipe: 'This pipe is monitored by a real device. The twin mirrors it and cannot originate a leak',
+  rankingInfo: 'Ranked by distance 50 percent, availability 25 percent, workload 15 percent, skills 10 percent',
+};
