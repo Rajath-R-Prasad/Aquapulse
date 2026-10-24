@@ -57,3 +57,33 @@ input:focus-visible {
   0% { opacity: 0.8; transform: scale(0.65); }
   100% { opacity: 0; transform: scale(2.1); }
 }
+/* Leak status — red */
+.condition-badge.leak,
+.status-badge.leak,
+.leak-badge {
+  background-color: #fee2e2 !important;
+  color: #b91c1c !important;
+  border: 1px solid #fca5a5;
+}
+
+/* Normal status — green */
+.condition-badge.normal {
+  background-color: #d1fae5;
+  color: #047857;
+}
+
+/* Pending verification — amber */
+.condition-badge.pending {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+.condition-badge.leak {
+  background-color: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+.condition-badge.isolated {
+  background-color: #f3f4f6;
+  color: #4b5563;
+  border: 1px solid #d1d5db;
+}
