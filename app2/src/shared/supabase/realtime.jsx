@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { supabase } from './client';
 import { debounce, throttle } from '../lib/hooks';
+import { useCriticalAlert } from '@/features/alerts/CriticalAlertContext';
 
 const LiveContext = createContext('reconnecting');
 export const useLiveStatus = () => useContext(LiveContext);
@@ -15,6 +16,10 @@ export function RealtimeProvider({ children }) {
   const navigate = useNavigate();
   const navRef = useRef(navigate);
   navRef.current = navigate;
+  const { triggerAlert } = useCriticalAlert();
+  const triggerAlertRef = useRef(triggerAlert);
+  triggerAlertRef.current = triggerAlert;
+
   const [statuses, setStatuses] = useState({});
   const [live, setLive] = useState('reconnecting');
   const wasDown = useRef(false);
@@ -31,6 +36,16 @@ export function RealtimeProvider({ children }) {
         inv('events');
         if (row?.id) inv('event', row.id);
         inv('summary');
+
+        // Check if event is or has escalated to critical
+        const isCritical = p.new?.severity === 'CRITICAL' ||
+          (typeof p.new?.severity_score === 'number' && p.new?.severity_score >= 0.8);
+        const isOpen = p.new?.status !== 'CLOSED' && p.new?.status !== 'FALSE_ALARM';
+
+        if (isCritical && isOpen) {
+          triggerAlertRef.current?.(p.new);
+        }
+
         if (p.eventType === 'INSERT' && ['MAJOR', 'CRITICAL'].includes(p.new?.severity)) {
           toast.error(`${p.new.severity === 'CRITICAL' ? 'Critical' : 'Major'} leak detected`, {
             description: p.new.event_no,
@@ -63,6 +78,13 @@ export function RealtimeProvider({ children }) {
       ['notifications', 'INSERT', (p) => {
         inv('notifications');
         if (p.new?.title) toast(p.new.title, { description: p.new.body ?? undefined });
+        if (
+          p.new?.payload?.severity === 'CRITICAL' ||
+          p.new?.type === 'SEVERITY_ESCALATED' ||
+          p.new?.title?.toLowerCase?.().includes('critical')
+        ) {
+          triggerAlertRef.current?.(p.new?.payload || p.new);
+        }
       }],
       ['engineers', 'UPDATE', () => invEngineers()],
     ];

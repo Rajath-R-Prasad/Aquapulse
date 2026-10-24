@@ -1,7 +1,8 @@
-import { lazy, Suspense, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useMemo } from 'react';
 import { Activity, RefreshCw, TriangleAlert } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/shared/api/client';
+import { useCriticalAlert } from '@/features/alerts/CriticalAlertContext';
 import { Card, CardHeader } from '@/shared/ui/Card';
 import { KpiCard } from '@/shared/ui/KpiCard';
 import { ErrorState, EmptyState } from '@/shared/ui/States';
@@ -14,6 +15,7 @@ const fmtTime = (value) =>
   value ? new Date(value).toLocaleString() : 'Waiting for first twin reading';
 
 export default function PublicDashboardPage() {
+  const { triggerAlert } = useCriticalAlert();
   const query = useQuery({
     queryKey: ['public-demo-dashboard'],
     queryFn: () => api.get('/v1/demo/dashboard'),
@@ -21,6 +23,26 @@ export default function PublicDashboardPage() {
     staleTime: 1_000,
   });
   const data = query.data;
+
+  // React to critical events from the digital twin public feed
+  useEffect(() => {
+    if (!data) return;
+    const criticalEvent = (data.events ?? []).find(
+      (e) => e.severity === 'CRITICAL' || (typeof e.severity_score === 'number' && e.severity_score >= 0.8)
+    );
+    if (criticalEvent) {
+      triggerAlert(criticalEvent);
+    } else if ((data.open_events_by_severity?.CRITICAL ?? 0) > 0) {
+      triggerAlert({
+        id: 'open-demo-critical',
+        event_no: 'CRITICAL TWIN EVENT',
+        pipe_code: 'Twin Network',
+        severity: 'CRITICAL',
+        severity_score: 1.0,
+      });
+    }
+  }, [data, triggerAlert]);
+
   const mapped = useMemo(() => {
     const pipes = [];
     const nodes = [];
