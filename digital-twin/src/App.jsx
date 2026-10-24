@@ -476,6 +476,16 @@ export default function App() {
                 const pipe = feature.properties;
                 const reading = readings.get(pipe.code);
                 const isLeaking = leaks[pipe.code] != null;
+                const condition = isLeaking ? 'LEAK' : pipe.state;
+              const conditionClass =
+  condition === 'LEAK'
+    ? 'bg-red-100 text-red-700 ring-1 ring-inset ring-red-200'
+    : condition === 'ISOLATED'
+      ? 'bg-gray-100 text-gray-700 ring-1 ring-inset ring-gray-300'
+      : condition === 'WARNING' ||
+          condition === 'PENDING_VERIFICATION'
+        ? 'bg-amber-50 text-amber-800'
+        : 'bg-teal-50 text-teal-700';
                 const delta = reading ? Number(reading.flow_in) - Number(reading.flow_out) : null;
                 return (
                   <tr
@@ -484,7 +494,7 @@ export default function App() {
                     className={`cursor-pointer transition hover:bg-slate-100 ${selectedCode === pipe.code ? 'bg-teal-600/[0.04]' : ''}`}
                   >
                     <td className="px-5 py-3 font-semibold text-slate-800">{pipe.code}<small className="ml-2 font-normal text-slate-500">{pipe.diameter_mm} mm</small></td>
-                    <td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-[10px] font-medium ${isLeaking ? 'bg-rose-50 text-rose-700' : pipe.state === 'WARNING' ? 'bg-amber-50 text-amber-800' : 'bg-teal-50 text-teal-700'}`}>{isLeaking ? 'INJECTED LEAK' : pipe.state}</span></td>
+                    <td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-[10px] font-medium ${conditionClass}`}>{condition}</span></td>
                     <td className="px-4 py-3 text-slate-600">{isLeaking ? `${fmt(leaks[pipe.code])} L/min` : '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{reading ? `${fmt(reading.flow_in)} L/min` : '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{reading ? `${fmt(reading.flow_out)} L/min` : '—'}</td>
